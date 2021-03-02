@@ -7,11 +7,11 @@ from huobi_swap_client import Huobi_Swap_Client
 
 logger = logging.getLogger('root')
 
-Huobi_Access_Key = 'b00f2e77-be663014-125c4637-dbuqg6hkte'
-Huobi_Secret_Key = '53ea9f05-1d068deb-a314d834-9c290'
+Huobi_Access_Key = ''
+Huobi_Secret_Key = ''
 
 # dingding address info
-dingding_address = 'https://oapi.dingtalk.com/robot/send?access_token=140d1e6686588c070a5e4edce39beb5feb74003450bbac8f3c53bfa34e079baa'
+dingding_address = ''
 
 is_proxies = False
 
