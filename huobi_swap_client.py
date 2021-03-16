@@ -11,8 +11,8 @@ import urllib
 import urllib.parse
 import json
 
-Access_Key = ''
-Secret_Key =  ''
+Access_Key = 'b00f2e77-be663014-125c4637-dbuqg6hkte'
+Secret_Key =  '53ea9f05-1d068deb-a314d834-9c290'
 
 class Huobi_Swap_Client():
 
@@ -21,8 +21,8 @@ class Huobi_Swap_Client():
         self.Secret_Key = Secret_Key
         self.is_proxies = is_proxies
         # self.BASE_URL = 'https://api.hbdm.com/' # for vpn
-        self.BASE_URL = 'https://api.hbdm.vn/' # for aws
-        # self.BASE_URL = 'https://api.btcgateway.pro/' # for test
+        # self.BASE_URL = 'https://api.hbdm.vn/' # for aws
+        self.BASE_URL = 'https://api.btcgateway.pro/' # for test
 
     def utc_now(self):
         return datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S')
@@ -601,6 +601,33 @@ class Huobi_Swap_Client():
         return RequestManager().send_request(my_request, self.is_proxies)
 
     '''触发类'''
+    def get_swap_tpsl_openorders(self, contract_code):
+        method = 'POST'
+        path = 'linear-swap-api/v1/swap_tpsl_openorders'
+        url = self.BASE_URL + path
+        params = {
+            'SignatureMethod': 'HmacSHA256',
+            'SignatureVersion': '2',
+            'AccessKeyId': self.Access_Key,
+            'Timestamp': self.utc_now(),
+        }
+        params["Signature"] = self.generate_signature(method, params, url)
+        params = urllib.parse.urlencode(params)
+
+        data = {}
+        data['contract_code'] = contract_code
+
+        data = json.dumps(data, separators=(',', ':'))
+
+        my_request = Request(
+            method=method,
+            url=url,
+            data=data,
+            params=params
+        )
+        return RequestManager().send_request(my_request, self.is_proxies)
+
+
     def create_tpsl_order(self, contract_code, direction, volume,
                           tp_trigger_price = None, tp_order_price = None, tp_order_price_type = None,
                           sl_trigger_price = None, sl_order_price = None, sl_order_price_type = None):
@@ -700,6 +727,7 @@ class Huobi_Swap_Client():
 
 if __name__ == '__main__':
     aa = Huobi_Swap_Client(Access_Key=Access_Key, Secret_Key=Secret_Key, is_proxies=False)
+    print(aa.get_swap_tpsl_openorders(contract_code='BTC-USDT'))
 
     '''公共信息类'''
     # print(aa.get_market_info(contract_code='BTC-USDT'))
