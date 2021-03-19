@@ -11,8 +11,8 @@ import urllib
 import urllib.parse
 import json
 
-Access_Key = 'b00f2e77-be663014-125c4637-dbuqg6hkte'
-Secret_Key =  '53ea9f05-1d068deb-a314d834-9c290'
+# Access_Key = 'b00f2e77-be663014-125c4637-dbuqg6hkte'
+# Secret_Key =  '53ea9f05-1d068deb-a314d834-9c290'
 
 class Huobi_Swap_Client():
 
@@ -727,7 +727,7 @@ class Huobi_Swap_Client():
 
 if __name__ == '__main__':
     aa = Huobi_Swap_Client(Access_Key=Access_Key, Secret_Key=Secret_Key, is_proxies=False)
-    print(aa.get_swap_tpsl_openorders(contract_code='BTC-USDT'))
+    # print(aa.get_swap_tpsl_openorders(contract_code='BTC-USDT'))
 
     '''公共信息类'''
     # print(aa.get_market_info(contract_code='BTC-USDT'))

@@ -7,15 +7,23 @@ from huobi_swap_client import Huobi_Swap_Client
 
 logger = logging.getLogger('root')
 
-Huobi_Access_Key = 'b00f2e77-be663014-125c4637-dbuqg6hkte'
-Huobi_Secret_Key = '53ea9f05-1d068deb-a314d834-9c290'
+# Huobi Main account
+# Huobi_Access_Key = 'b00f2e77-be663014-125c4637-dbuqg6hkte'
+# Huobi_Secret_Key = '53ea9f05-1d068deb-a314d834-9c290'
+
+# alaric0001_macd
+Huobi_Access_Key = '0b9e06a8-xa2b53ggfc-929af80b-d8c22'
+Huobi_Secret_Key = '5f46f8db-27fc972a-1ad70984-fa622'
 
 # dingding address info
 dingding_address = 'https://oapi.dingtalk.com/robot/send?access_token=140d1e6686588c070a5e4edce39beb5feb74003450bbac8f3c53bfa34e079baa'
 
 is_proxies = False
 
+# order settings
 contract_code = 'BTC-USDT'
+lever_rate = 10
+order_price_type='optimal_20'
 
 # contract info
 contract_decimal = 1
@@ -24,8 +32,8 @@ class MACD_strategy():
 
     def __init__(self):
         # strategy info
-        self.strategy_account = 'test account'
-        self.strategy_name = 'MACD strategy version 1'
+        self.strategy_account = 'Alaric test account'
+        self.strategy_name = 'MACD strategy version 3'
 
         # dingding info
         self.xiaoding = DingtalkChatbot(dingding_address)
@@ -71,7 +79,7 @@ class MACD_strategy():
         self.k_lines_count = 700
 
         # trade params
-        self.trade_leverage = 1.5
+        self.trade_leverage = 1
         self.max_leverage = 10
         self.backup_stop_order_percent = 1.02
 
@@ -131,371 +139,396 @@ class MACD_strategy():
         else:
             self.trade_signal = 0
         message = 'macd is %s, diff is %s, Trade signal is %s.' % (self.macd, self.diff, self.trade_signal)
-        print(message)
+        # print(message)
         # self.dingding_notice(message)
 
     '''trade logic'''
-    def trade_start(self):
-        self.get_MACD()
-        time.sleep(0.5)
+    def trade(self):
+        current_hour = time.localtime(time.time()).tm_hour # 记录一下小时 用于播报
+        last_hour = None
         while True:
+            # 用thread的方式计算macd交易信号 防止由于网络问题导致程序中断
             MACD_thread = threading.Thread(target=self.get_MACD)
             MACD_thread.start()
             while MACD_thread.is_alive() is True:
                 time.sleep(0.2)
 
             # 根据计算出的交易信号判断现在应该处在的状态：Long，Short or IDLE
-            if self.trade_signal == 1:
-                # 当前的仓位应处于多头状态
-                self.get_trade_amount()
-                message = 'Current trade signal should be Long, \n' \
-                          'Long position should be %s, \n' %(
-                              self.trade_amount
-                          )
-                self.check_position()
-                time.sleep(1.5)
-                # 如果检测到目前仓位为空仓，开多仓，数量为trade amount
-                if self.trade_state == 'IDLE':
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=self.trade_amount,
-                                                        direction='buy',
-                                                        offset='open',
-                                                        lever_rate = 10,
-                                                        order_price_type='optimal_20')
-                    message = 'buy order, buy amount is %s' %(self.trade_amount)
+            if self.trade_signal == 1: # 当前的仓位应处于多头状态
+                self.get_trade_amount() # 获取根据当前仓位计算出的开仓数量
+                check_position_thread = threading.Thread(target=self.check_position)
+                check_position_thread.start()
+                while check_position_thread.is_alive() is True:
+                    time.sleep(0.2)
 
-                # 如果检测到目前仓位为空头，平空仓后开多仓，开仓数量为trade amount
-                elif self.trade_state =='Short':
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=int(self.current_sell_volume),
-                                                        direction='buy',
-                                                        offset='close',
-                                                        lever_rate=10,
-                                                        order_price_type='optimal_20')
+                if self.trade_state == 'IDLE': # 如果检测到目前仓位为空仓，开多仓，数量为trade amount
+                    open_order_info = None
+                    open_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                          volume = int(self.trade_amount),
+                                                                          direction = 'buy',
+                                                                          offset = 'open',
+                                                                          lever_rate = lever_rate,
+                                                                          order_price_type = order_price_type)
+                    message = 'Current position is %s, \n' \
+                              'Current status should be Long, amount should be %s \n ' \
+                              'Operation: \n ' \
+                              'Place long order, trade amount is %s. \n ' \
+                              'Order info: \n ' \
+                              '%s' %(
+                                  self.trade_state,
+                                  self.trade_amount,
+                                  int(self.trade_amount),
+                                  open_order_info
+                              )
+                    self.dingding_notice(message)
+
+                elif self.trade_state == 'Short': # 如果检测到目前仓位为空头，平空仓后开多仓，开仓数量为trade amount
+                    close_order_info = None
+                    close_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                           volume = int(self.current_sell_volume),
+                                                                           direction = 'buy',
+                                                                           offset = 'close',
+                                                                           lever_rate = lever_rate,
+                                                                           order_price_type = order_price_type)
                     time.sleep(1)
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=self.trade_amount,
-                                                        direction='buy',
-                                                        offset='open',
-                                                        lever_rate = 10,
-                                                        order_price_type='optimal_20')
-                    message = 'buy order, buy amount is %s' %(self.trade_amount)
+                    open_order_info = None
+                    open_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                          volume = int(self.trade_amount),
+                                                                          direction = 'buy',
+                                                                          offset = 'open',
+                                                                          lever_rate = lever_rate,
+                                                                          order_price_type = order_price_type)
 
-                # 如果检测到目前仓位为多头，则判断开仓数量是否正确，多退少补
-                elif self.trade_state == 'Long':
-                    # 如果多头仓位大于交易数量，则平掉对于的部分
-                    if self.current_buy_volume > self.trade_amount:
-                        self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                            volume=int(self.current_buy_volume-self.trade_amount),
-                                                            direction='sell',
-                                                            offset='close',
-                                                            lever_rate=10,
-                                                            order_price_type='optimal_20')
-                    # 如果多头仓位小于交易数量，则补上不够的部分
-                    elif self.current_buy_volume < self.trade_amount:
-                        self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                            volume=int(self.trade_amount-self.current_buy_volume),
-                                                            direction='buy',
-                                                            offset='open',
-                                                            lever_rate = 10,
-                                                            order_price_type='optimal_20')
-                        message = 'buy order, buy amount is %s' %(self.trade_amount)
+                    message = 'Current position is %s, sell volume is %s. \n' \
+                              'Current status should be Long, amount should be %s \n ' \
+                              'Operation: \n ' \
+                              'Close short position, close amount is %s \n ' \
+                              'Close order info: \n ' \
+                              '%s \n ' \
+                              'Place long order, trade amount is %s. \n ' \
+                              'Order info: \n ' \
+                              '%s' %(
+                                  self.trade_state, int(self.current_sell_volume),
+                                  self.trade_amount,
+                                  int(self.current_sell_volume),
+                                  close_order_info,
+                                  int(self.trade_amount),
+                                  open_order_info
+                              )
+                    self.dingding_notice(message)
+
+                elif self.trade_state == 'Long': # 如果检测到目前仓位为多头，则判断开仓数量是否正确，多退少补
+                    if self.current_buy_volume > self.trade_amount: # 如果多头仓位大于交易数量，则平掉多于的部分
+                        close_order_info = None
+                        close_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                               volume = int(self.current_buy_volume-self.trade_amount),
+                                                                               direction = 'sell',
+                                                                               offset = 'close',
+                                                                               lever_rate = lever_rate,
+                                                                               order_price_type = order_price_type)
+                        message = 'Current position is %s, buy volume is %s \n' \
+                                  'Current status should be Long, amount should be %s \n ' \
+                                  'Operation: \n ' \
+                                  'Close long order, trade amount is %s. \n ' \
+                                  'Close order info: \n ' \
+                                  '%s' %(
+                                      self.trade_state, self.current_buy_volume,
+                                      self.trade_amount,
+                                      int(self.current_buy_volume-self.trade_amount),
+                                      close_order_info
+                                  )
+                        self.dingding_notice(message)
+
+                    elif self.current_buy_volume < self.trade_amount: # 如果多头仓位小于交易数量，则补上不够的部分
+                        open_order_info = None
+                        open_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                              volume = int(self.trade_amount-self.current_buy_volume),
+                                                                              direction = 'buy',
+                                                                              offset = 'open',
+                                                                              lever_rate = lever_rate,
+                                                                              order_price_type = order_price_type)
+                        message = 'Current position is %s, buy volume is %s \n' \
+                                  'Current status should be Long, amount should be %s \n ' \
+                                  'Operation: \n ' \
+                                  'Open long order, trade amount is %s. \n ' \
+                                  'Close order info: \n ' \
+                                  '%s' %(
+                                      self.trade_state, self.current_buy_volume,
+                                      self.trade_amount,
+                                      int(self.trade_amount-self.current_buy_volume),
+                                      open_order_info
+                                  )
+                        self.dingding_notice(message)
+
                     else:
-                        pass
+                        message = 'Current position is %s, buy volume is %s \n' \
+                                  'Current status should be Long, amount should be %s \n ' \
+                                  'Operation: \n ' \
+                                  'Strategy Running Normal! No Futher Operation Needed! \n ' \
+                                  %(
+                                      self.trade_state, self.current_buy_volume,
+                                      self.trade_amount
+                                  )
 
+                        if current_hour != last_hour and current_hour in [0, 4, 8, 12, 16, 20]:
+                            self.dingding_notice(message)
+                            last_hour = current_hour
 
-            elif self.trade_signal == -1:
-                # 当前的仓位应处于空头状态
-                self.get_trade_amount()
-                message = 'Current trade signal should be Short ' \
-                          'Short position should be %s' %(
-                              self.trade_amount
-                          )
-                self.check_position()
-                time.sleep(1.5)
-                # 如果检测到目前仓位为空仓，开空仓，数量为trade amount
-                if self.trade_state == 'IDLE':
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=self.trade_amount,
-                                                        direction='sell',
-                                                        offset='open',
-                                                        lever_rate = 10,
-                                                        order_price_type='optimal_20')
-                    message = 'sell order, sell amount is %s' %(self.trade_amount)
-                    pass
-                # 如果检测到目前仓位为空头，平多后开空仓，开仓数量为trade amount
-                elif self.trade_state =='Long':
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=int(self.current_buy_volume),
-                                                        direction='sell',
-                                                        offset='close',
-                                                        lever_rate=10,
-                                                        order_price_type='optimal_20')
+            elif self.trade_signal == -1: # 当前的仓位应处于空头状态
+                self.get_trade_amount() # 获取根据当前仓位计算出的开仓数量
+                check_position_thread = threading.Thread(target=self.check_position)
+                check_position_thread.start()
+                while check_position_thread.is_alive() is True:
+                    time.sleep(0.2)
+
+                if self.trade_state == 'IDLE':# 如果检测到目前仓位为空仓，开空仓，数量为trade amount
+                    open_order_info = None
+                    open_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                          volume = int(self.trade_amount),
+                                                                          direction = 'sell',
+                                                                          offset = 'open',
+                                                                          lever_rate = lever_rate,
+                                                                          order_price_type = order_price_type)
+                    message = 'Current position is %s, \n' \
+                              'Current status should be Short, amount should be %s \n ' \
+                              'Operation: \n ' \
+                              'Place short order, trade amount is %s. \n ' \
+                              'Order info: \n ' \
+                              '%s' %(
+                                  self.trade_state,
+                                  self.trade_amount,
+                                  int(self.trade_amount),
+                                  open_order_info
+                              )
+                    self.dingding_notice(message)
+
+                elif self.trade_state =='Long': # 如果检测到目前仓位为空头，平多后开空仓，开仓数量为trade amount
+                    close_order_info = None
+                    close_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                           volume = int(self.current_buy_volume),
+                                                                           direction = 'sell',
+                                                                           offset = 'close',
+                                                                           lever_rate = lever_rate,
+                                                                           order_price_type = order_price_type)
                     time.sleep(1)
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=self.trade_amount,
-                                                        direction='sell',
-                                                        offset='open',
-                                                        lever_rate = 10,
-                                                        order_price_type='optimal_20')
-                    message = 'buy order, buy amount is %s' %(self.trade_amount)
-                    pass
-                elif self.trade_state == 'Short':
-                    if self.current_sell_volume > self.trade_amount:
-                        self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                            volume = int(self.current_sell_volume - self.trade_amount),
-                                                            direction = 'buy',
-                                                            offset='close',
-                                                            lever_rate = 10,
-                                                            order_price_type='optimal_20')
-                    elif self.current_sell_volume < self.trade_amount:
-                        self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                            volume = int(self.trade_amount - self.current_sell_volume),
-                                                            direction = 'sell',
-                                                            offset='open',
-                                                            lever_rate = 10,
-                                                            order_price_type='optimal_20')
+                    open_order_info = None
+                    open_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                          volume = int(self.trade_amount),
+                                                                          direction = 'sell',
+                                                                          offset = 'open',
+                                                                          lever_rate = lever_rate,
+                                                                          order_price_type = order_price_type)
+
+                    message = 'Current position is %s, buy volume is %s. \n' \
+                              'Current status should be Short, amount should be %s \n ' \
+                              'Operation: \n ' \
+                              'Close long position, close amount is %s \n ' \
+                              'Close order info: \n ' \
+                              '%s \n ' \
+                              'Place short order, trade amount is %s. \n ' \
+                              'Order info: \n ' \
+                              '%s' %(
+                                  self.trade_state, self.current_buy_volume,
+                                  self.trade_amount,
+                                  self.current_buy_volume,
+                                  close_order_info,
+                                  int(self.trade_amount),
+                                  open_order_info
+                              )
+                    self.dingding_notice(message)
+
+                elif self.trade_state == 'Short': # 如果检测到目前仓位为空头，则判断开仓数量是否正确，多退少补
+                    if self.current_sell_volume > self.trade_amount: # 如果空头数量大于交易数量，则平掉多于的部分
+                        close_order_info = None
+                        close_order_info = self.huobi_swap_client.create_order(contract_code=contract_code,
+                                                                               volume = int(self.current_sell_volume - self.trade_amount),
+                                                                               direction = 'buy',
+                                                                               offset='close',
+                                                                               lever_rate = lever_rate,
+                                                                               order_price_type= order_price_type)
+                        message = 'Current position is %s, sell volume is %s \n' \
+                                  'Current status should be Short, amount should be %s \n ' \
+                                  'Operation: \n ' \
+                                  'Close short order, trade amount is %s. \n ' \
+                                  'Close order info: \n ' \
+                                  '%s' %(
+                                      self.trade_state, self.current_sell_volume,
+                                      self.trade_amount,
+                                      int(self.current_sell_volume - self.trade_amount),
+                                      close_order_info
+                                  )
+                        self.dingding_notice(message)
+                    elif self.current_sell_volume < self.trade_amount: # 如果空头数量小于交易数量，则补上不够的部分
+                        open_order_info = None
+                        open_order_info = self.huobi_swap_client.create_order(contract_code=contract_code,
+                                                                              volume = int(self.trade_amount - self.current_sell_volume),
+                                                                              direction = 'sell',
+                                                                              offset='open',
+                                                                              lever_rate = lever_rate,
+                                                                              order_price_type = order_price_type)
+                        message = 'Current position is %s, sell volume is %s \n' \
+                                  'Current status should be Short, amount should be %s \n ' \
+                                  'Operation: \n ' \
+                                  'Open short order, trade amount is %s. \n ' \
+                                  'Close order info: \n ' \
+                                  '%s' %(
+                                      self.trade_state, self.current_sell_volume,
+                                      self.trade_amount,
+                                      int(self.trade_amount - self.current_sell_volume),
+                                      open_order_info
+                                  )
+                        self.dingding_notice(message)
                     else:
-                        pass
+                        message = 'Current position is %s, sell volume is %s \n' \
+                                  'Current status should be Short, amount should be %s \n ' \
+                                  'Operation: \n ' \
+                                  'Strategy Running Normal! No Futher Operation Needed! \n ' \
+                                  %(
+                                      self.trade_state, self.current_sell_volume,
+                                      self.trade_amount
+                                  )
 
-            elif self.trade_signal == 0:
-                # 当前的仓位应处于空仓状态
+                        if current_hour != last_hour and current_hour in [0, 4, 8, 12, 16, 20]:
+                            self.dingding_notice(message)
+                            last_hour = current_hour
+
+            elif self.trade_signal == 0: # 当前的仓位应处于空仓状态
                 self.get_trade_amount()
-                message = 'Current trade signal should be IDLE'
-                self.check_position()
-                time.sleep(1.5)
-                if self.trade_state == 'IDLE':
-                    pass
-                elif self.trade_state =='Short':
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=int(self.current_sell_volume),
-                                                        direction = 'buy',
-                                                        offset = 'close',
-                                                        lever_rate = 10,
-                                                        order_price_type='optimal_20')
-                elif self.trade_state == 'Long':
-                    self.huobi_swap_client.create_order(contract_code=contract_code,
-                                                        volume=int(self.current_buy_volume),
-                                                        direction = 'sell',
-                                                        offset = 'close',
-                                                        lever_rate = 10,
-                                                        order_price_type='optimal_20')
+                check_position_thread = threading.Thread(target=self.check_position)
+                check_position_thread.start()
+                while check_position_thread.is_alive() is True:
+                    time.sleep(0.2)
 
-            print(message)
+                if self.trade_state == 'IDLE': # 如果当前仓位为空仓则不需要进行任何操作
+                    message = 'Current position is %s. \n' \
+                              'Current status should be IDLE \n' \
+                              'Operation: \n' \
+                              'Strategy Running Normal! No Futher Operation Needed! \n ' %(
+                                  self.trade_state
+                              )
+
+                    if current_hour != last_hour and current_hour in [0, 4, 8, 12, 16, 20]:
+                        self.dingding_notice(message)
+                        last_hour = current_hour
+
+                elif self.trade_state =='Short': # 如果当前仓位为空头，则应平掉所有的空头仓位
+                    close_order_info = None
+                    close_order_info = self.huobi_swap_client.create_order(contract_code=contract_code,
+                                                                           volume=int(self.current_sell_volume),
+                                                                           direction = 'buy',
+                                                                           offset = 'close',
+                                                                           lever_rate = lever_rate,
+                                                                           order_price_type=order_price_type)
+                    message = 'Current position is %s, sell volume is %s. \n' \
+                              'Current status should be IDLE \n' \
+                              'Operation: \n' \
+                              'Close short position, close amount is %s \n ' \
+                              'Close order info: \n' \
+                              '%s \n ' %(
+                                  self.trade_state, self.current_sell_volume,
+                                  int(self.current_sell_volume),
+                                  close_order_info
+                              )
+                    self.dingding_notice(message)
+
+                elif self.trade_state == 'Long': # 如果当前的仓位为空头，则应平掉所有的多头仓位
+                    close_order_info = None
+                    close_order_info = self.huobi_swap_client.create_order(contract_code = contract_code,
+                                                                           volume = int(self.current_buy_volume),
+                                                                           direction = 'sell',
+                                                                           offset = 'close',
+                                                                           lever_rate = lever_rate,
+                                                                           order_price_type = order_price_type)
+                    message = 'Current position is %s, lone volume is %s. \n' \
+                              'Current status should be IDLE \n' \
+                              'Operation: \n' \
+                              'Close long position, close amount is %s \n' \
+                              'Close order info: \n' \
+                              '%s \n ' %(
+                                  self.trade_state, int(self.current_buy_volume),
+                                  int(self.current_buy_volume),
+                                  close_order_info
+                              )
+                    self.dingding_notice(message)
+            stop_order_thread = threading.Thread(target=self.stop_order)
+            stop_order_thread.start()
+            while stop_order_thread.is_alive() is True:
+                time.sleep(0.2)
             time.sleep(15)
 
+    def stop_order(self):
+        check_position_thread = threading.Thread(target=self.check_position)
+        check_position_thread.start()
+        while check_position_thread.is_alive() is True:
+            time.sleep(0.2)
 
-    # def in_idle(self):
-    #     message = 'Status updated, Current status: IDLE'
-    #     self.dingding_notice(message)
-    #     logger.info(message)
-    #     self.cancel_order_all()
-    #     while True:
-    #         self.check_position()
-    #         if self.trade_state != 'IDLE':
-    #             return
-    #         new_klines = self.huobi_swap_client.get_k_lines(contract_code=contract_code, period='60min', size=3)['data']
-    #         # print(new_klines)
-    #         while len(new_klines) != 3:
-    #             time.sleep(1)
-    #             new_klines = self.huobi_swap_client.get_k_lines(contract_code=contract_code, period='60min', size=3)['data']
-    #         if self.current_working_day != new_klines[-1]['id']:
-    #             logger.info("current working hour: %s" % self.current_working_day)
-    #             logger.info('new k_line hour: %s' % new_klines[-1]['id'])
-    #             self.get_MACD()
-    #             self.get_trade_amount()
-    #             if self.trade_signal > 0:
-    #                 self.huobi_swap_client.create_order(contract_code=contract_code,
-    #                                                     volume=self.trade_amount,
-    #                                                     direction='buy',
-    #                                                     offset='open',
-    #                                                     lever_rate = 10,
-    #                                                     order_price_type='optimal_20')
-    #                 message = 'buy order, buy amount is %s' %(self.trade_amount)
-    #             elif self.trade_signal < 0:
-    #                 self.huobi_swap_client.create_order(contract_code=contract_code,
-    #                                                     volume=self.trade_amount,
-    #                                                     direction='sell',
-    #                                                     offset='open',
-    #                                                     lever_rate = 10,
-    #                                                     order_price_type='optimal_20')
-    #                 message = 'sell order, sell amount is %s' %(self.trade_amount)
-    #             else:
-    #                 message = 'macd is 0'
-    #             self.dingding_notice(message=message)
-    #             time.sleep(15)
-    #         self.current_working_day = new_klines[-1]['id']
-    #
-    # def in_long_position(self):
-    #     self.cancel_order_all()
-    #     time.sleep(1)
-    #     self.check_position()
-    #     message = 'Status updated, Current status: Long. Current long position: %s, Avg Price: %s' \
-    #               %(self.current_buy_volume, self.current_buy_cost_open)
-    #     self.dingding_notice(message)
-    #
-    #     stopPx = self.current_buy_cost_open / self.backup_stop_order_percent # in long position, stop loss
-    #     self.get_current_account_position_info()
-    #     time.sleep(1)
-    #     # print(contract_code,'sell',int(self.current_buy_volume),self.format_price(stopPx),'optimal_20')
-    #     stop_order = self.huobi_swap_client.create_tpsl_order(contract_code=contract_code,
-    #                                                           direction='sell',
-    #                                                           volume=int(self.current_buy_volume),
-    #                                                           sl_trigger_price= self.format_price(stopPx),
-    #                                                           sl_order_price_type='optimal_20'
-    #                                                           )
-    #     time.sleep(1)
-    #     message = 'Back-up stop orders settle, direction is sell, stop price is: %s.' % (self.format_price(stopPx))
-    #     self.dingding_notice(message)
-    #
-    #     while True:
-    #         time.sleep(15)
-    #         self.check_position()
-    #         if self.trade_state != 'Long':
-    #             return
-    #         new_klines =  self.huobi_swap_client.get_k_lines(contract_code=contract_code, period='60min', size=3)['data']
-    #         while len(new_klines) != 3:
-    #             time.sleep(1)
-    #             new_klines = self.huobi_swap_client.get_k_lines(contract_code=contract_code, period='60min', size=3)['data']
-    #
-    #         if self.current_working_day != new_klines[-1]['id']:
-    #             logger.info("current working hour: %s" % self.current_working_day)
-    #             logger.info('new k_line hour: %s' % new_klines[-1]['id'])
-    #             self.get_MACD()
-    #             self.get_trade_amount()
-    #
-    #             if self.trade_signal < 0:
-    #                 self.huobi_swap_client.create_order(contract_code=contract_code,
-    #                                                     volume=int(self.current_buy_volume + self.trade_amount),
-    #                                                     direction='sell',
-    #                                                     offset='open',
-    #                                                     lever_rate = 10,
-    #                                                     order_price_type='optimal_20')
-    #
-    #                 message = 'direction: -> short. Current long position is %s, trade amount is %s' %(
-    #                     self.current_buy_volume, self.trade_amount
-    #                 )
-    #                 self.dingding_notice(message)
-    #             elif self.macd < 0:
-    #                 self.huobi_swap_client.create_order(contract_code=contract_code,
-    #                                                     volume=int(self.current_buy_volume),
-    #                                                     direction='sell',
-    #                                                     offset='open',
-    #                                                     lever_rate = 10,
-    #                                                     order_price_type='optimal_20')
-    #
-    #                 message = 'direction: -> IDLE. Current long position is %s, trade amount is %s' %(
-    #                     self.current_buy_volume, self.trade_amount
-    #                 )
-    #                 self.dingding_notice(message)
-    #
-    #         self.current_working_day = new_klines[-1]['id']
-    #
-    # def in_short_position(self):
-    #     self.cancel_order_all()
-    #     time.sleep(1)
-    #     self.check_position()
-    #     message = 'Status updated, Current status: Short. Current short position: %s, Avg Price: %s' \
-    #               % (self.current_sell_volume, self.current_sell_cost_open)
-    #     self.dingding_notice(message)
-    #
-    #     stopPx = self.current_sell_cost_open * self.backup_stop_order_percent
-    #     self.huobi_swap_client.create_tpsl_order(contract_code=contract_code,
-    #                                              direction='buy',
-    #                                              volume=int(self.current_sell_volume),
-    #                                              sl_trigger_price= self.format_price(stopPx),
-    #                                              sl_order_price_type='optimal_20'
-    #                                              )
-    #
-    #     time.sleep(1)
-    #     message = 'Back-up stop orders settle, direction is buy, stop price is: %s.' % (self.format_price(stopPx))
-    #     self.dingding_notice(message)
-    #
-    #     while True:
-    #         time.sleep(15)
-    #         self.check_position()
-    #         if self.trade_state != 'Short':
-    #             return
-    #         new_klines =  self.huobi_swap_client.get_k_lines(contract_code=contract_code, period='60min', size=3)['data']
-    #         while len(new_klines) != 3:
-    #             time.sleep(1)
-    #             new_klines = self.huobi_swap_client.get_k_lines(contract_code=contract_code, period='60min', size=3)['data']
-    #         if self.current_working_day != new_klines[-1]['id']:
-    #             logger.info("current working hour: %s" % self.current_working_day)
-    #             logger.info('new k_line hour: %s' % new_klines[-1]['id'])
-    #             self.get_MACD()
-    #             self.get_trade_amount()
-    #             if self.trade_signal > 0:
-    #                 self.huobi_swap_client.create_order(contract_code=contract_code,
-    #                                                     volume=int(self.current_sell_volume + self.trade_amount),
-    #                                                     direction='buy',
-    #                                                     offset='open',
-    #                                                     lever_rate = 10,
-    #                                                     order_price_type='optimal_20')
-    #                 message = 'direction: -> Long. Current short position is %s, trade amount is %s' %(
-    #                     self.current_sell_volume, self.trade_amount
-    #                 )
-    #                 self.dingding_notice(message)
-    #             elif self.macd > 0:
-    #                 self.huobi_swap_client.create_order(contract_code=contract_code,
-    #                                                     volume=int(self.current_sell_volume),
-    #                                                     direction='buy',
-    #                                                     offset='open',
-    #                                                     lever_rate=10,
-    #                                                     order_price_type='optimal_20')
-    #                 message = 'direction: -> IDLE. Current short position is %s, trade amount is %s' % (
-    #                     self.current_sell_volume, self.trade_amount
-    #                 )
-    #                 self.dingding_notice(message)
-    #
-    #         self.current_working_day = new_klines[-1]['id']
-    #
-    # def trade(self):
-    #     self.get_trade_amount()
-    #     time.sleep(1)
-    #     self.get_current_account_position_info()
-    #     self.start_margin_balance = self.current_margin_balance
-    #     message = 'System initialization completed, beginning balance: %s \n' \
-    #               'Trading %s with basic trading amount %s.' \
-    #               %(self.start_margin_balance,contract_code, self.trade_amount)
-    #     self.dingding_notice(message)
-    #     last_balance = self.start_margin_balance
-    #
-    #     while True:
-    #         time.sleep(1)
-    #         self.cancel_order_all()
-    #         if self.current_lever_rate <= self.max_leverage_rate:
-    #             if self.trade_state == 'IDLE':
-    #                 self.check_position()
-    #                 message = 'Single circulation completed, now balance: %s \n' \
-    #                           'Profit in this circulation : %s, Profit from initialization :%s' \
-    #                           %(self.current_margin_balance,
-    #                             self.current_margin_balance-last_balance,
-    #                             self.current_margin_balance-self.start_margin_balance)
-    #                 self.dingding_notice(message)
-    #
-    #                 last_balance = self.current_margin_balance
-    #                 self.in_idle()
-    #                 continue
-    #             elif self.trade_state == 'Short':
-    #                 self.in_short_position()
-    #                 continue
-    #             elif self.trade_state == 'Long':
-    #                 self.in_long_position()
-    #                 continue
-    #         elif self.current_lever_rate > self.max_leverage_rate:
-    #             message = 'Current leverage exceed maximum working leverage, initialization failed, please check'
-    #             self.dingding_notice(message)
-    #             if self.trade_state == 'IDLE':
-    #                 self.in_idle()
-    #                 continue
-    #             elif self.trade_state == 'Short':
-    #                 self.in_short_position()
-    #                 continue
-    #             elif self.trade_state == 'Long':
-    #                 self.in_long_position()
-    #                 continue
-    #         time.sleep(15)
+        if self.trade_state == 'IDLE': # 检测到仓位为空仓，此时应该没有止损单，如果有就撤销掉止损单
+            if self.tpsl_direction != None or \
+                self.tpsl_volume != 0 or \
+                self.tpsl_trigger_price != 0:
+                cancel_order_info = self.huobi_swap_client.cancel_tpsl_order_all(contract_code = contract_code)
+                message = f'''\n
+                            Current trade status is IDLE, but tpsl order exist. \n
+                            TPSL order should be canceled. \n 
+                            Cancel order info is: \n 
+                            {cancel_order_info}
+                            '''
+                self.dingding_notice(message)
+
+        elif self.trade_state == 'Long': # 检查到仓位为多头，如果方向，价格或数量不对，则取消订单重新下单
+            stopPx = self.current_buy_cost_open / self.backup_stop_order_percent
+            if self.tpsl_direction != 'sell' or \
+                self.tpsl_volume != round(self.current_buy_volume,1) or \
+                self.tpsl_trigger_price != stopPx:
+
+                cancel_order_info = self.huobi_swap_client.cancel_tpsl_order_all(contract_code = contract_code)
+                time.sleep(1)
+                stop_order = self.huobi_swap_client.create_tpsl_order(contract_code = contract_code,
+                                                                      direction = 'sell',
+                                                                      volume = int(self.current_buy_volume),
+                                                                      sl_trigger_price = self.format_price(stopPx),
+                                                                      sl_order_price_type = order_price_type
+                                                                      )
+                message = f'''\n
+                            Current trade status is Long \n 
+                            TPSL direction is {self.tpsl_direction}; should be sell \n 
+                            TPSL volume is {self.tpsl_volume}; should be {self.current_buy_volume} \n 
+                            TPSL trigger price is {self.tpsl_trigger_price}; should be {stopPx} \n 
+                            TPSL order is wrong; cancel order and replace \n 
+                            Cancel order info: \n 
+                            {cancel_order_info} \n 
+                            Stop order info: \n 
+                            {stop_order}
+                            '''
+                self.dingding_notice(message)
+
+        elif self.trade_state == 'Short': # 检查到仓位为空头，如果方向，价格或数量不对，则取消订单重新下单
+            stopPx = self.current_sell_cost_open * self.backup_stop_order_percent
+            if self.tpsl_direction != 'buy' or \
+                self.tpsl_volume != round(self.current_sell_volume,1) or \
+                self.tpsl_trigger_price != stopPx:
+                cancel_order_info = self.huobi_swap_client.cancel_tpsl_order_all(contract_code = contract_code)
+                time.sleep(1)
+                stop_order = self.huobi_swap_client.create_tpsl_order(contract_code = contract_code,
+                                                                      direction = 'buy',
+                                                                      volume = int(self.current_sell_volume),
+                                                                      sl_trigger_price = self.format_price(stopPx),
+                                                                      sl_order_price_type = order_price_type
+                                                                      )
+                message = f'''\n
+                            Current trade status is Short \n 
+                            TPSL direction is {self.tpsl_direction}; should be buy \n 
+                            TPSL volume is {self.tpsl_volume}; should be {self.current_sell_volume} \n 
+                            TPSL trigger price is {self.tpsl_trigger_price}; should be {stopPx} \n 
+                            TPSL order is wrong; cancel order and replace \n 
+                            Cancel order info: \n 
+                            {cancel_order_info} \n 
+                            Stop order info: \n 
+                            {stop_order}
+                            '''
+                self.dingding_notice(message)
+
+
 
     '''account info'''
     def get_current_account_position_info(self):
@@ -590,53 +623,10 @@ class MACD_strategy():
         time.sleep(1.5)
         if self.current_buy_volume == self.current_sell_volume:
             self.trade_state = 'IDLE'
-            if self.current_buy_volume > 0 and self.current_sell_volume > 0:
-                self.huobi_swap_client.create_order(contract_code=contract_code,volume=int(self.current_buy_volume),
-                                                    direction='sell',offset='close',lever_rate=10,
-                                                    order_price_type='optimal_5')
-                time.sleep(1)
-                self.huobi_swap_client.create_order(contract_code=contract_code,volume=int(self.current_sell_volume),
-                                                    direction='buy',offset='close',lever_rate=10,
-                                                    order_price_type='optimal_5')
-                time.sleep(1)
-                message = 'trade state is idle, but long and short position is not zero,' \
-                          'long position is %s, short position is %s' %(self.current_buy_volume,self.current_sell_volume)
-                self.dingding_notice(message)
-            else:
-                pass
-
         elif self.current_buy_volume > self.current_sell_volume:
             self.trade_state = 'Long'
-            if self.current_sell_volume > 0:
-                self.huobi_swap_client.create_order(contract_code=contract_code,volume=int(self.current_sell_volume),
-                                                    direction='sell',offset='close',lever_rate=10,
-                                                    order_price_type='optimal_5')
-                time.sleep(1)
-                self.huobi_swap_client.create_order(contract_code=contract_code,volume=int(self.current_sell_volume),
-                                                    direction='buy',offset='close',lever_rate=10,
-                                                    order_price_type='optimal_5')
-                time.sleep(1)
-                message = 'trade state is long, but short position is not zero,' \
-                          'long position is %s, short position is %s' % (self.current_buy_volume,self.current_sell_volume)
-                self.dingding_notice(message)
-            else:
-                pass
         else:
             self.trade_state = 'Short'
-            if self.current_buy_volume > 0:
-                self.huobi_swap_client.create_order(contract_code=contract_code,volume=int(self.current_buy_volume),
-                                                    direction='sell',offset='close',lever_rate=10,
-                                                    order_price_type='optimal_5')
-                time.sleep(1)
-                self.huobi_swap_client.create_order(contract_code=contract_code,volume=int(self.current_buy_volume),
-                                                    direction='buy',offset='close',lever_rate=10,
-                                                    order_price_type='optimal_5')
-                time.sleep(1)
-                message = 'trade state is short, but long position is not zero,' \
-                          'long position is %s, short position is %s' % (self.current_buy_volume,self.current_sell_volume)
-                self.dingding_notice(message)
-            else:
-                pass
         # print('Trade status is: ',self.trade_state)
 
     def get_trade_amount(self):
@@ -653,35 +643,36 @@ class MACD_strategy():
         # print('Current margin balance is ', self.current_margin_balance)
 
         self.trade_amount = int(self.current_margin_balance / (self.current_market_price * 0.001) * self.trade_leverage)
-        print('trade amount is: ', self.trade_amount)
+        # print('trade amount is: ', self.trade_amount)
 
     def check_tpsl_openorders(self):
         openorders_info = self.huobi_swap_client.get_swap_tpsl_openorders(contract_code=contract_code)
-        # print(openorders_info)
+        print(openorders_info)
         self.tpsl_volume = 0
         self.tpsl_direction = None
         self.tpsl_trigger_price = 0
         self.tpsl_order_type = None
+        message = ''
         if openorders_info['status'] =='ok':
             if len(openorders_info['data']['orders']) != 0:
                 self.tpsl_volume = int(openorders_info['data']['orders'][0]['volume'])
                 self.tpsl_direction = openorders_info['data']['orders'][0]['direction']
                 self.tpsl_trigger_price = openorders_info['data']['orders'][0]['trigger_price']
                 self.tpsl_order_type = openorders_info['data']['orders'][0]['tpsl_order_type']
-                order_message = 'tpsl direction is %s,' \
-                                'tpsl_volume is %s,' \
-                                'tpsl_trigger_price is %s,' \
-                                'self.tpsl_order_type is %s.' %(
-                                    self.tpsl_direction,
-                                    self.tpsl_volume,
-                                    self.tpsl_trigger_price,
-                                    self.tpsl_order_type
-                                )
-                # print(order_message)
+                message = 'tpsl direction is: %s \n' \
+                          'tpsl_volume is: %s \n' \
+                          'tpsl_trigger_price is: %s \n' \
+                          'tpsl_order_type is: %s. \n' %(
+                              self.tpsl_direction,
+                              self.tpsl_volume,
+                              self.tpsl_trigger_price,
+                              self.tpsl_order_type
+                          )
             else:
                 message = 'There is no tpsl order'
         else:
-            message = 'cannot get tpsl order info'
+            message = 'Cannot get tpsl order info'
+        print(message)
 
     '''market info'''
     def get_current_price(self):
@@ -696,7 +687,7 @@ class MACD_strategy():
 
     def dingding_notice(self, message=None):
         self.get_current_account_position_info()
-        basic_info = '\n--------------------------------\n' \
+        basic_info = '--------------------------------\n' \
                      'Strategy name: %s \n' \
                      'Contract code: %s \n' \
                      'Current long position: %s \n' \
@@ -721,8 +712,9 @@ class MACD_strategy():
         self.huobi_swap_client.cancel_tpsl_order_all(contract_code=contract_code)
 
 test = MACD_strategy()
-test.trade_start()
-
+test.trade()
+# test.trade_start()
+# test.get_MACD()
 # test.check_tpsl_openorders()
 
 
