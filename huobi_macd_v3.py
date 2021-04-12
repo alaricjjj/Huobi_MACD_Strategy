@@ -717,7 +717,7 @@ class MACD_strategy():
         self.huobi_swap_client.cancel_tpsl_order_all(contract_code=contract_code)
 
 test = MACD_strategy()
-# test.trade()
+test.trade()
 
 # test.trade_start()
 # test.get_MACD()
