@@ -722,7 +722,7 @@ test.trade()
 # test.trade_start()
 # test.get_MACD()
 # test.check_tpsl_openorders()
-test.stop_order()
+# test.stop_order()
 
 
 # test.trade()
