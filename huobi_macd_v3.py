@@ -73,9 +73,9 @@ class MACD_strategy():
         self.current_sell_position_margin = 0  # 空头持仓保证金
 
         # quant model params
-        self.period_short = 12
-        self.period_long = 26
-        self.period_dea = 9
+        self.period_short = 8
+        self.period_long = 40
+        self.period_dea = 24
         self.k_lines_count = 700
 
         # trade params
@@ -407,7 +407,8 @@ class MACD_strategy():
                                   self.trade_state
                               )
 
-                    if current_hour != last_hour and current_hour in [0, 4, 8, 12, 16, 20]:
+                    # if current_hour != last_hour and current_hour in [0, 4, 8, 12, 16, 20]:
+                    if current_hour != last_hour:
                         self.dingding_notice(message)
                         last_hour = current_hour
 
@@ -450,6 +451,7 @@ class MACD_strategy():
                                   close_order_info
                               )
                     self.dingding_notice(message)
+
             stop_order_thread = threading.Thread(target=self.stop_order)
             stop_order_thread.start()
             while stop_order_thread.is_alive() is True:
@@ -457,10 +459,11 @@ class MACD_strategy():
             time.sleep(15)
 
     def stop_order(self):
-        check_position_thread = threading.Thread(target=self.check_position)
-        check_position_thread.start()
-        while check_position_thread.is_alive() is True:
-            time.sleep(0.2)
+
+        self.check_position()
+        time.sleep(1)
+        self.check_tpsl_openorders()
+        time.sleep(1)
 
         if self.trade_state == 'IDLE': # 检测到仓位为空仓，此时应该没有止损单，如果有就撤销掉止损单
             if self.tpsl_direction != None or \
@@ -501,6 +504,8 @@ class MACD_strategy():
                             {stop_order}
                             '''
                 self.dingding_notice(message)
+                print(message)
+
 
         elif self.trade_state == 'Short': # 检查到仓位为空头，如果方向，价格或数量不对，则取消订单重新下单
             stopPx = self.current_sell_cost_open * self.backup_stop_order_percent
@@ -672,7 +677,7 @@ class MACD_strategy():
                 message = 'There is no tpsl order'
         else:
             message = 'Cannot get tpsl order info'
-        print(message)
+        # print(message)
 
     '''market info'''
     def get_current_price(self):
@@ -692,7 +697,7 @@ class MACD_strategy():
                      'Contract code: %s \n' \
                      'Current long position: %s \n' \
                      'Current short position: %s \n' \
-                     'Local time: %s \n ' \
+                     'Local time: %s \n' \
                      '--------------------------------\n' \
                      % (self.strategy_name,
                         contract_code,
@@ -712,11 +717,12 @@ class MACD_strategy():
         self.huobi_swap_client.cancel_tpsl_order_all(contract_code=contract_code)
 
 test = MACD_strategy()
-test.trade()
+# test.trade()
+
 # test.trade_start()
 # test.get_MACD()
 # test.check_tpsl_openorders()
-
+test.stop_order()
 
 
 # test.trade()
