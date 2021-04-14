@@ -79,7 +79,7 @@ class MACD_strategy():
         self.k_lines_count = 700
 
         # trade params
-        self.trade_leverage = 1
+        self.trade_leverage = 3
         self.max_leverage = 10
         self.backup_stop_order_percent = 1.02
 
@@ -482,7 +482,7 @@ class MACD_strategy():
             stopPx = self.current_buy_cost_open / self.backup_stop_order_percent
             if self.tpsl_direction != 'sell' or \
                 self.tpsl_volume != round(self.current_buy_volume,1) or \
-                self.tpsl_trigger_price != stopPx:
+                self.tpsl_trigger_price != round(stopPx,1):
 
                 cancel_order_info = self.huobi_swap_client.cancel_tpsl_order_all(contract_code = contract_code)
                 time.sleep(1)
@@ -511,7 +511,7 @@ class MACD_strategy():
             stopPx = self.current_sell_cost_open * self.backup_stop_order_percent
             if self.tpsl_direction != 'buy' or \
                 self.tpsl_volume != round(self.current_sell_volume,1) or \
-                self.tpsl_trigger_price != stopPx:
+                self.tpsl_trigger_price != round(stopPx):
                 cancel_order_info = self.huobi_swap_client.cancel_tpsl_order_all(contract_code = contract_code)
                 time.sleep(1)
                 stop_order = self.huobi_swap_client.create_tpsl_order(contract_code = contract_code,
@@ -652,7 +652,7 @@ class MACD_strategy():
 
     def check_tpsl_openorders(self):
         openorders_info = self.huobi_swap_client.get_swap_tpsl_openorders(contract_code=contract_code)
-        print(openorders_info)
+        # print(openorders_info)
         self.tpsl_volume = 0
         self.tpsl_direction = None
         self.tpsl_trigger_price = 0
