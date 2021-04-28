@@ -479,17 +479,17 @@ class MACD_strategy():
                 self.dingding_notice(message)
 
         elif self.trade_state == 'Long': # 检查到仓位为多头，如果方向，价格或数量不对，则取消订单重新下单
-            stopPx = self.current_buy_cost_open / self.backup_stop_order_percent
+            stopPx = self.format_price(self.current_buy_cost_open / self.backup_stop_order_percent)
             if self.tpsl_direction != 'sell' or \
                 self.tpsl_volume != round(self.current_buy_volume,1) or \
-                self.tpsl_trigger_price != round(stopPx,1):
+                self.tpsl_trigger_price != stopPx:
 
                 cancel_order_info = self.huobi_swap_client.cancel_tpsl_order_all(contract_code = contract_code)
                 time.sleep(1)
                 stop_order = self.huobi_swap_client.create_tpsl_order(contract_code = contract_code,
                                                                       direction = 'sell',
                                                                       volume = int(self.current_buy_volume),
-                                                                      sl_trigger_price = self.format_price(stopPx),
+                                                                      sl_trigger_price = stopPx,
                                                                       sl_order_price_type = order_price_type
                                                                       )
                 message = f'''\n
@@ -506,18 +506,18 @@ class MACD_strategy():
                 self.dingding_notice(message)
                 print(message)
 
-
         elif self.trade_state == 'Short': # 检查到仓位为空头，如果方向，价格或数量不对，则取消订单重新下单
-            stopPx = self.current_sell_cost_open * self.backup_stop_order_percent
+            stopPx = self.format_price(self.current_sell_cost_open * self.backup_stop_order_percent)
             if self.tpsl_direction != 'buy' or \
                 self.tpsl_volume != round(self.current_sell_volume,1) or \
-                self.tpsl_trigger_price != round(stopPx):
+                self.tpsl_trigger_price != stopPx:
+
                 cancel_order_info = self.huobi_swap_client.cancel_tpsl_order_all(contract_code = contract_code)
                 time.sleep(1)
                 stop_order = self.huobi_swap_client.create_tpsl_order(contract_code = contract_code,
                                                                       direction = 'buy',
                                                                       volume = int(self.current_sell_volume),
-                                                                      sl_trigger_price = self.format_price(stopPx),
+                                                                      sl_trigger_price = stopPx,
                                                                       sl_order_price_type = order_price_type
                                                                       )
                 message = f'''\n
@@ -575,7 +575,7 @@ class MACD_strategy():
                              self.current_lever_rate,
                              time.strftime("%Y-%m-%d %H:%M:%S",time.localtime()))
                 # print(message)
-                if len(current_position['data'][0]['positions']) > 0:
+                if current_position['data'][0]['positions'] != None:
                     for i in current_position['data'][0]['positions']:
                         if i['direction'] == 'buy':
                             self.current_buy_volume = i['volume']  # 当前多头总仓位
@@ -718,7 +718,7 @@ class MACD_strategy():
 
 test = MACD_strategy()
 test.trade()
-
+# test.get_current_account_position_info()
 # test.trade_start()
 # test.get_MACD()
 # test.check_tpsl_openorders()
