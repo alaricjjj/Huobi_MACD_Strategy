@@ -88,7 +88,7 @@ class MACD_strategy():
         self.trade_signal = 0
         self.trade_state = 'IDLE'
 
-        self.trade_amount = 0
+        self.trade_amount = self.get_trade_amount()
 
         self.current_working_day = None
 
@@ -649,6 +649,7 @@ class MACD_strategy():
 
         self.trade_amount = int(self.current_margin_balance / (self.current_market_price * 0.001) * self.trade_leverage)
         # print('trade amount is: ', self.trade_amount)
+        return self.trade_amount
 
     def check_tpsl_openorders(self):
         openorders_info = self.huobi_swap_client.get_swap_tpsl_openorders(contract_code=contract_code)
